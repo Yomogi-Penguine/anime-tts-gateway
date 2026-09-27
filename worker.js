@@ -141,10 +141,11 @@ async function handleTts(request, env) {
 
     return json(
       {
-        error: "TTS provider request failed.",
-        provider_http_status: upstream.status,
-        provider_status: providerStatus || null,
-        provider_message: providerMessage || null
+        error:
+          "TTS provider request failed. HTTP " +
+          upstream.status +
+          (providerStatus ? " / " + providerStatus : "") +
+          (providerMessage ? " / " + providerMessage : "")
       },
       502
     );
