@@ -116,13 +116,38 @@ async function handleTts(request, env) {
   }
 
   if (!upstream.ok) {
-    if (upstream.status === 429) {
-      return json(
-        { error: "The TTS provider is temporarily rate-limited." },
-        429
-      );
+    let providerMessage = "";
+    let providerStatus = "";
+
+    try {
+      const providerError = await upstream.json();
+      providerMessage =
+        providerError?.error?.message ||
+        providerError?.message ||
+        "";
+      providerStatus =
+        providerError?.error?.status ||
+        providerError?.status ||
+        "";
+    } catch {
+      try {
+        providerMessage = await upstream.text();
+      } catch {}
     }
-    return json({ error: "The TTS provider rejected the request." }, 502);
+
+    if (providerMessage.length > 500) {
+      providerMessage = providerMessage.slice(0, 500) + "...";
+    }
+
+    return json(
+      {
+        error: "TTS provider request failed.",
+        provider_http_status: upstream.status,
+        provider_status: providerStatus || null,
+        provider_message: providerMessage || null
+      },
+      502
+    );
   }
 
   let data;
