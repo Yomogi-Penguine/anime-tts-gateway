@@ -10,7 +10,7 @@ export default {
     const url = new URL(request.url);
 
     if (request.method === "GET" && url.pathname === "/") {
-      return new Response(APP_HTML, {
+      return new Response(new TextEncoder().encode(APP_HTML), {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
           "Cache-Control": "no-store",
@@ -238,12 +238,12 @@ const APP_HTML = `<!doctype html>
 <body>
 <main>
   <h1>Anime TTS Gateway</h1>
-  <p>æç« ãGemini 3.8 Flash TTSã§WAVé³å£°ã«ãã¾ãã</p>
+  <p>\u6587\u7ae0\u3092Gemini 3.8 Flash TTS\u3067WAV\u97f3\u58f0\u306b\u3057\u307e\u3059\u3002</p>
 
-  <label for="text">èª­ã¿ä¸ãæç« </label>
-  <textarea id="text" maxlength="${MAX_TEXT_CHARS}">ãã¯ãããããã¾ãâ¦â¦ä»æ¥ã¯ãå°ãéãã§ãã­ã</textarea>
+  <label for="text">\u8aad\u307f\u4e0a\u3052\u6587\u7ae0</label>
+  <textarea id="text" maxlength="${MAX_TEXT_CHARS}">\u304a\u306f\u3088\u3046\u3054\u3056\u3044\u307e\u3059\u2026\u2026\u4eca\u65e5\u306f\u3001\u5c11\u3057\u9759\u304b\u3067\u3059\u306d\u3002</textarea>
 
-  <label for="style">å£°ã»æ¼æ</label>
+  <label for="style">\u58f0\u30fb\u6f14\u6280</label>
   <textarea id="style" maxlength="${MAX_STYLE_CHARS}">Soft, slightly low-pitched, breathy Japanese anime-style female voice. Calm, mysterious, restrained emotion, gentle pauses.</textarea>
 
   <label for="voice">Voice</label>
@@ -251,14 +251,14 @@ const APP_HTML = `<!doctype html>
 
   <label for="token">Gateway Access Token</label>
   <input id="token" type="password" autocomplete="off">
-  <div class="hint">Gemini APIã­ã¼ã§ã¯ããã¾ãããGatewayå°ç¨Tokenã§ãã</div>
+  <div class="hint">Gemini API\u30ad\u30fc\u3067\u306f\u3042\u308a\u307e\u305b\u3093\u3002Gateway\u5c02\u7528Token\u3067\u3059\u3002</div>
 
-  <button id="generate">é³å£°ãçæ</button>
+  <button id="generate">\u97f3\u58f0\u3092\u751f\u6210</button>
 
   <div class="card">
-    <div id="status">æºåå®äº</div>
+    <div id="status">\u6e96\u5099\u5b8c\u4e86</div>
     <audio id="player" controls></audio>
-    <div><a id="download" download="speech.wav" hidden>WAVãä¿å­</a></div>
+    <div><a id="download" download="speech.wav" hidden>WAV\u3092\u4fdd\u5b58</a></div>
   </div>
 </main>
 
@@ -279,13 +279,13 @@ let lastUrl = null;
 button.addEventListener("click", async () => {
   const accessToken = token.value.trim();
   if (!accessToken) {
-    status.textContent = "Access Tokenãå¥åãã¦ãã ããã";
+    status.textContent = "Access Token\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044\u3002";
     return;
   }
 
   sessionStorage.setItem("gateway-token", accessToken);
   button.disabled = true;
-  status.textContent = "çæä¸­â¦";
+  status.textContent = "\u751f\u6210\u4e2d\u2026";
   download.hidden = true;
 
   try {
@@ -303,7 +303,7 @@ button.addEventListener("click", async () => {
     });
 
     if (!res.ok) {
-      let message = "é³å£°çæã«å¤±æãã¾ããã";
+      let message = "\u97f3\u58f0\u751f\u6210\u306b\u5931\u6557\u3057\u307e\u3057\u305f\u3002";
       try {
         const data = await res.json();
         if (data?.error) message = data.error;
@@ -319,9 +319,9 @@ button.addEventListener("click", async () => {
     player.src = lastUrl;
     download.href = lastUrl;
     download.hidden = false;
-    status.textContent = "çæå®äºã";
+    status.textContent = "\u751f\u6210\u5b8c\u4e86\u3002";
   } catch (err) {
-    status.textContent = err?.message || "ã¨ã©ã¼ãçºçãã¾ããã";
+    status.textContent = err?.message || "\u30a8\u30e9\u30fc\u304c\u767a\u751f\u3057\u307e\u3057\u305f\u3002";
   } finally {
     button.disabled = false;
   }
