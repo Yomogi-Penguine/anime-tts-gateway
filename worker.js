@@ -1,4 +1,6 @@
+const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions";
 const MODEL = "gemini-3.8-flash-tts";
+
 const MAX_TEXT_CHARS = 2000;
 const MAX_STYLE_CHARS = 600;
 const MAX_VOICE_CHARS = 128;
@@ -13,8 +15,8 @@ export default {
           "Content-Type": "text/html; charset=utf-8",
           "Cache-Control": "no-store",
           "X-Content-Type-Options": "nosniff",
-          "Referrer-Policy": "no-referrer"
-        }
+          "Referrer-Policy": "no-referrer",
+        },
       });
     }
 
@@ -27,7 +29,7 @@ export default {
     }
 
     return new Response("Not Found", { status: 404 });
-  }
+  },
 };
 
 async function handleTts(request, env) {
@@ -51,49 +53,63 @@ async function handleTts(request, env) {
   const style = typeof body?.style === "string" ? body.style.trim() : "";
   const voice = typeof body?.voice === "string" ? body.voice.trim() : "Kore";
 
-  if (!text) return json({ error: "Text is required." }, 400);
+  if (!text) {
+    return json({ error: "Text is required." }, 400);
+  }
   if (text.length > MAX_TEXT_CHARS) {
-    return json({ error: `Text is too long. Max ${MAX_TEXT_CHARS} chars.` }, 400);
+    return json(
+      { error: `Text is too long. Maximum is ${MAX_TEXT_CHARS} characters.` },
+      400
+    );
   }
   if (style.length > MAX_STYLE_CHARS) {
-    return json({ error: `Style is too long. Max ${MAX_STYLE_CHARS} chars.` }, 400);
+    return json(
+      { error: `Style is too long. Maximum is ${MAX_STYLE_CHARS} characters.` },
+      400
+    );
   }
   if (!voice || voice.length > MAX_VOICE_CHARS) {
     return json({ error: "Invalid voice." }, 400);
   }
 
-  const part = { text };
-  if (style) {
-    part.speech_metadata = { style };
-  }
+  const annotation = { type: "speech_metadata" };
+  if (style) annotation.style = style;
 
   const payload = {
-    contents: [{
-      role: "user",
-      parts: [part]
-    }],
-    generationConfig: {
-      responseModalities: ["AUDIO"],
-      speechConfig: {
-        voiceConfig: {
-          voice
-        }
-      }
-    }
+    model: MODEL,
+    input: [
+      {
+        type: "user_input",
+        content: [
+          {
+            type: "text",
+            text,
+            annotations: [annotation],
+          },
+        ],
+      },
+    ],
+    response_format: {
+      type: "audio",
+    },
+    generation_config: {
+      speech_config: [
+        {
+          voice,
+        },
+      ],
+    },
   };
-
-  const endpoint =
-    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
   let upstream;
   try {
-    upstream = await fetch(endpoint, {
+    upstream = await fetch(GEMINI_ENDPOINT, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-goog-api-key": env.GEMINI_API_KEY
+        "x-goog-api-key": env.GEMINI_API_KEY,
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
   } catch {
     return json({ error: "Could not reach the TTS provider." }, 502);
@@ -101,7 +117,10 @@ async function handleTts(request, env) {
 
   if (!upstream.ok) {
     if (upstream.status === 429) {
-      return json({ error: "The TTS provider is temporarily rate-limited." }, 429);
+      return json(
+        { error: "The TTS provider is temporarily rate-limited." },
+        429
+      );
     }
     return json({ error: "The TTS provider rejected the request." }, 502);
   }
@@ -113,15 +132,17 @@ async function handleTts(request, env) {
     return json({ error: "Invalid response from TTS provider." }, 502);
   }
 
-  const audioPart = data?.candidates?.[0]?.content?.parts?.find(
-    p => p?.inlineData?.data
-  );
-
-  if (!audioPart?.inlineData?.data) {
+  const audioBase64 = findLastAudioBlock(data);
+  if (!audioBase64) {
     return json({ error: "No audio was returned." }, 502);
   }
 
-  const bytes = decodeBase64(audioPart.inlineData.data);
+  let bytes;
+  try {
+    bytes = decodeBase64(audioBase64);
+  } catch {
+    return json({ error: "Returned audio could not be decoded." }, 502);
+  }
 
   return new Response(bytes, {
     status: 200,
@@ -129,22 +150,49 @@ async function handleTts(request, env) {
       "Content-Type": "audio/wav",
       "Content-Disposition": 'inline; filename="speech.wav"',
       "Cache-Control": "no-store",
-      "X-Content-Type-Options": "nosniff"
-    }
+      "X-Content-Type-Options": "nosniff",
+    },
   });
+}
+
+function findLastAudioBlock(data) {
+  let found = null;
+  const steps = Array.isArray(data?.steps) ? data.steps : [];
+
+  for (const step of steps) {
+    if (step?.type !== "model_output" || !Array.isArray(step?.content)) {
+      continue;
+    }
+
+    for (const item of step.content) {
+      if (item?.type === "audio" && typeof item?.data === "string") {
+        found = item.data;
+      }
+    }
+  }
+
+  return found;
 }
 
 function decodeBase64(base64) {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
   return bytes;
 }
 
 function constantTimeEqual(a, b) {
   if (a.length !== b.length) return false;
+
   let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  for (let i = 0; i < a.length; i += 1) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+
   return diff === 0;
 }
 
@@ -154,8 +202,8 @@ function json(value, status = 200) {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       "Cache-Control": "no-store",
-      "X-Content-Type-Options": "nosniff"
-    }
+      "X-Content-Type-Options": "nosniff",
+    },
   });
 }
 
@@ -190,12 +238,12 @@ const APP_HTML = `<!doctype html>
 <body>
 <main>
   <h1>Anime TTS Gateway</h1>
-  <p>文章をGemini 3.8 Flash TTSでWAV音声にします。</p>
+  <p>æç« ãGemini 3.8 Flash TTSã§WAVé³å£°ã«ãã¾ãã</p>
 
-  <label for="text">読み上げ文章</label>
-  <textarea id="text" maxlength="${MAX_TEXT_CHARS}">おはようございます……今日は、少し静かですね。</textarea>
+  <label for="text">èª­ã¿ä¸ãæç« </label>
+  <textarea id="text" maxlength="${MAX_TEXT_CHARS}">ãã¯ãããããã¾ãâ¦â¦ä»æ¥ã¯ãå°ãéãã§ãã­ã</textarea>
 
-  <label for="style">声・演技</label>
+  <label for="style">å£°ã»æ¼æ</label>
   <textarea id="style" maxlength="${MAX_STYLE_CHARS}">Soft, slightly low-pitched, breathy Japanese anime-style female voice. Calm, mysterious, restrained emotion, gentle pauses.</textarea>
 
   <label for="voice">Voice</label>
@@ -203,14 +251,14 @@ const APP_HTML = `<!doctype html>
 
   <label for="token">Gateway Access Token</label>
   <input id="token" type="password" autocomplete="off">
-  <div class="hint">Gemini APIキーではありません。Gateway専用Tokenです。</div>
+  <div class="hint">Gemini APIã­ã¼ã§ã¯ããã¾ãããGatewayå°ç¨Tokenã§ãã</div>
 
-  <button id="generate">音声を生成</button>
+  <button id="generate">é³å£°ãçæ</button>
 
   <div class="card">
-    <div id="status">準備完了</div>
+    <div id="status">æºåå®äº</div>
     <audio id="player" controls></audio>
-    <div><a id="download" download="speech.wav" hidden>WAVを保存</a></div>
+    <div><a id="download" download="speech.wav" hidden>WAVãä¿å­</a></div>
   </div>
 </main>
 
@@ -231,13 +279,13 @@ let lastUrl = null;
 button.addEventListener("click", async () => {
   const accessToken = token.value.trim();
   if (!accessToken) {
-    status.textContent = "Access Tokenを入力してください。";
+    status.textContent = "Access Tokenãå¥åãã¦ãã ããã";
     return;
   }
 
   sessionStorage.setItem("gateway-token", accessToken);
   button.disabled = true;
-  status.textContent = "生成中…";
+  status.textContent = "çæä¸­â¦";
   download.hidden = true;
 
   try {
@@ -245,17 +293,17 @@ button.addEventListener("click", async () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": "Bearer " + accessToken
+        "Authorization": "Bearer " + accessToken,
       },
       body: JSON.stringify({
         text: text.value,
         style: style.value,
-        voice: voice.value
-      })
+        voice: voice.value,
+      }),
     });
 
     if (!res.ok) {
-      let message = "音声生成に失敗しました。";
+      let message = "é³å£°çæã«å¤±æãã¾ããã";
       try {
         const data = await res.json();
         if (data?.error) message = data.error;
@@ -264,14 +312,16 @@ button.addEventListener("click", async () => {
     }
 
     const blob = await res.blob();
+
     if (lastUrl) URL.revokeObjectURL(lastUrl);
     lastUrl = URL.createObjectURL(blob);
+
     player.src = lastUrl;
     download.href = lastUrl;
     download.hidden = false;
-    status.textContent = "生成完了。";
+    status.textContent = "çæå®äºã";
   } catch (err) {
-    status.textContent = err?.message || "エラーが発生しました。";
+    status.textContent = err?.message || "ã¨ã©ã¼ãçºçãã¾ããã";
   } finally {
     button.disabled = false;
   }
